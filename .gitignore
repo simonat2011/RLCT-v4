@@ -1,0 +1,6 @@
+__pycache__/*.pyc
+A3C_intensity_run.slurm
+*.out
+env/*.pyc
+env/__pycache__/*.pyc
+
