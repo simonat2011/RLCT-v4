@@ -466,7 +466,8 @@ class PPO_RB():
         old_act=np.zeros((self.action_dim,))
         equal=1.0/time_len
         self.start_epoch(1)
-        angles=random.shuffle(list(range(359)))
+        angles=list(range(360))
+        random.shuffle(angles)
         for i in range(time_len):
             if i!=0:
                 obs_norm=np.clip((obs-self.statestat.mean)/(self.statestat.std+1e-8),-40,40)
