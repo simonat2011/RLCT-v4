@@ -10,6 +10,23 @@ from torch.autograd import Variable
 import random
 import noise
 
+def masked_softmax(vec, mask, dim=-1):
+    masked_vec = vec * mask.float()
+    with torch.no_grad():
+        tmp_mask=1.0/mask.float()
+        # print(tmp_mask)
+        masked_max_vec=vec+(mask.float()-tmp_mask*torch.sign(tmp_mask))
+        # print(masked_max_vec)
+        max_vec = torch.max(masked_max_vec, dim=dim, keepdim=True)[0]
+        # print(max_vec)
+    # print(max_vec.size())
+    exps = torch.exp((masked_vec-max_vec)*mask.float())
+    masked_exps = (exps) * mask.float()
+    masked_sums = masked_exps.sum(dim, keepdim=True)
+    zeros=(masked_sums == 0)
+    masked_sums += zeros.float()
+    return masked_exps/(masked_sums)
+
 class policy_network(nn.Module):
     def __init__(self,input_num,output_num,n_hid,n_layers,dropout=0.0):
         super(policy_network, self).__init__()
@@ -33,7 +50,7 @@ class policy_network(nn.Module):
         self.in1_1_doze=torch.nn.InstanceNorm1d(n_hid)
         self.init_weights()
         self.start_act=self.input_num-self.output_num
-        self.noise=0.0
+        self.noise=1e-1
 
     def init_weights(self):
         torch.nn.init.orthogonal_(self.linear1.weight)
@@ -67,8 +84,8 @@ class policy_network(nn.Module):
         out=torch.relu(self.in2(self.linear2(rnn_out)))
         out=self.linear_out(out)
         batch_size=out.size()[1]
-        out1=torch.softmax(out,dim=2)
-        return out1,rnn_out,hidden2
+        # out1=torch.softmax(out,dim=2)
+        return out,rnn_out,hidden2
 
     def forward2(self,out,one_hot):
         input=torch.cat([out,one_hot],dim=2)
@@ -85,7 +102,7 @@ class policy_network(nn.Module):
         out1,rnn_out,_=self.forward(state,hidden)
         mask=torch.zeros(choose_act.size()).to(self.device)
         mask[choose_act<1e-6]=1.0
-        out1=mask*out1+1e-8
+        out1=masked_softmax(out1,mask)
         dist1=Categorical(out1)
         angle=dist1.sample()
         #print(angle)
@@ -113,7 +130,8 @@ class policy_network(nn.Module):
         one_hot=state[:,:,self.start_act:-1]
         mask=torch.zeros(one_hot.size()).to(self.device)
         mask[one_hot<1e-6]=1
-        out1=mask*out1+1e-10
+        # out1=mask*out1+1e-10
+        out1=masked_softmax(out1,mask)
         dist1=OneHotCategorical(out1)
         act1=dist1.sample()
         mean,std=self.forward2(rnn_out,act1)
@@ -129,9 +147,11 @@ class policy_network(nn.Module):
         one_hot=state[:,:,self.start_act:-1]
         mask=torch.zeros(one_hot.size()).to(self.device)
         mask[one_hot<1e-6]=1
-        out1=mask*out1+1e-10
-        p=torch.sum(out1,dim=2).unsqueeze(2)
-        out1=out1/p
+        # out1=mask*out1+1e-10
+        # p=torch.sum(out1,dim=2).unsqueeze(2)
+        # out1=out1/p
+        # out1=torch.sum(act*out1,dim=2)
+        out1=masked_softmax(out1,mask)
         out1=torch.sum(act*out1,dim=2)
         mean,std=self.forward2(rnn_out,act)
         rest=rest.view(-1,batch_size)
